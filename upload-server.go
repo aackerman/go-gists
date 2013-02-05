@@ -37,7 +37,7 @@ func upload (w http.ResponseWriter, r *http.Request){
     }
     defer outfile.Close()
 
-    // read the chunk in parts?
+    // read the chunk in smaller 4KB chunks
     for {
       buffer := make([]byte, 4096)
       bytesread, err := chunk.Read(buffer)
