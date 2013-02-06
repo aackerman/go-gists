@@ -7,47 +7,47 @@ import (
   "log"
   "os"
   "path"
+  "mime/multipart"
 )
 
-func upload (w http.ResponseWriter, r *http.Request){
-  fmt.Printf("request %v \n", r)
-  // create a reader
-  reader, err := r.MultipartReader()
+func writeMultipart(reader *multipart.Reader, path string) (filepath string, err error) {
+  // open a file
+  outfile, err := os.Create(path)
   if err != nil {
-    log.Fatal(err);
+    return "", err
   }
-
-  // get the length of the request
-  length := r.ContentLength
+  defer outfile.Close()
 
   // loop over the parts of the request
   for {
-
     // get the next chunk of the file
     chunk, err := reader.NextPart()
     if err == io.EOF {
       break
     }
 
-    // open a file to write to
-    outfile, err := os.OpenFile("outfile", os.O_WRONLY|os.O_CREATE, 0644)
-    if err != nil {
-      log.Fatal(err)
-      return
-    }
-    defer outfile.Close()
-
     // read the chunk in smaller 4KB chunks
     for {
       buffer := make([]byte, 4096)
-      bytesread, err := chunk.Read(buffer)
+      bufbytes, err := chunk.Read(buffer)
       if err == io.EOF {
           break
       }
-      // write the number of bytesread to the file
-      outfile.Write(buffer[:bytesread])
+      // write the number of bufbytes to the file
+      outfile.Write(buffer[:bufbytes])
     }
   }
+  return path, nil
+}
+
+func upload (w http.ResponseWriter, r *http.Request){
+  // create a reader
+  reader, err := r.MultipartReader()
+  if err != nil {
+    log.Fatal(err);
+  }
+
+  writeMultipart(reader, "outfile")
 }
 
 func main() {
