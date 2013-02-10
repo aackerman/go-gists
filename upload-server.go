@@ -4,56 +4,81 @@ import (
   "io"
   "fmt"
   "net/http"
-  "log"
   "os"
   "path"
   "mime/multipart"
+  "encoding/json"
 )
 
-func writeMultipart(reader *multipart.Reader, path string) (filepath string, err error) {
-  // open a file
-  outfile, err := os.Create(path)
+type UploadResponse struct {
+  Result string `json:"result"`
+}
+
+func WriteFileChunk(chunk *multipart.Part, file *os.File) (error) {
+  buffer := make([]byte, 4096)
+  bufbytes, err := chunk.Read(buffer)
+  if err == io.EOF {
+    return err
+  }
+  file.Write(buffer[:bufbytes])
+  return err
+}
+
+func LargeFileStream(r *multipart.Reader) {
+  p, err := r.NextPart()
+  if err == io.EOF {
+    return
+  }
+
+  file, err := os.OpenFile(p.FileName(), os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0644)
   if err != nil {
-    return "", err
+    return
   }
-  defer outfile.Close()
+  defer file.Close()
 
-  // loop over the parts of the request
   for {
-    // get the next chunk of the file
-    chunk, err := reader.NextPart()
+    err := WriteFileChunk(p, file)
     if err == io.EOF {
-      break
-    }
-
-    // read the chunk in smaller 4KB chunks
-    for {
-      buffer := make([]byte, 4096)
-      bufbytes, err := chunk.Read(buffer)
-      if err == io.EOF {
-          break
-      }
-      // write the number of bufbytes to the file
-      outfile.Write(buffer[:bufbytes])
+      return
     }
   }
-  return path, nil
+
+  for {
+    p, err := r.NextPart()
+    if err == io.EOF {
+      return
+    }
+
+    for {
+      err := WriteFileChunk(p, file)
+      if err == io.EOF {
+        break
+      }
+    }
+  }
+  return
 }
 
 func upload (w http.ResponseWriter, r *http.Request){
-  // create a reader
+  result := "ok"
   reader, err := r.MultipartReader()
   if err != nil {
-    log.Fatal(err);
+    result = "error"
   }
 
-  writeMultipart(reader, "outfile")
+  LargeFileStream(reader)
+
+  // send progress or complete json message
+  ur, _ := json.Marshal(UploadResponse{
+    Result: result,
+  })
+  fmt.Fprintf(w, string(ur))
 }
 
 func main() {
   root, _ := os.Getwd()
 
-  fmt.Printf("Starting server at http://localhost:8000\n")
+  fmt.Printf("\nStarting server at http://localhost:8000\n\n")
 
   http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
     file := root + path.Clean(r.URL.String())
